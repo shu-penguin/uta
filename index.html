@@ -341,6 +341,37 @@ async function uploadFile(key, file){
   return { file_data:{ mime_type:f.mimeType, file_uri:f.uri } };
 }
 
+// 混雑(503)・回数制限(429)のときは待って再試行し、だめなら別のモデルに切り替える
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function jaError(status, msg){
+  if (status === 503 || /high demand|overloaded|unavailable/i.test(msg)) return 'いま Gemini が こみあっています。すこし まってから もういちど ためしてください。';
+  if (status === 429 || /quota|rate/i.test(msg)) return 'むりょうわくの かいすうの じょうげんに たっしました。しばらく（またはあした）まってから ためしてください。';
+  if (status === 400 && /api key/i.test(msg)) return 'APIキーが ただしくないようです。⚙︎ で たしかめてください。';
+  if (status === 403) return 'このAPIキーでは つかえません（' + msg + '）';
+  return msg || ('HTTP ' + status);
+}
+async function callWithFallback(key, first, body){
+  const models = [first, ...store.get('models', []).map(m => m.id).filter(id => id !== first && /flash/.test(id))].slice(0, 3);
+  let last = { status:0, msg:'' };
+  for (const m of models){
+    for (let attempt = 0; attempt < 3; attempt++){
+      if (m !== first || attempt > 0) setStatus(`こみあっているので ${m} で やりなおし中…（${attempt + 1}かいめ）`);
+      const r = await fetch(`${API}/models/${m}:generateContent`, {
+        method:'POST', headers:{ 'x-goog-api-key':key, 'Content-Type':'application/json' }, body:JSON.stringify(body)
+      });
+      let j = {}; try{ j = await r.json(); }catch{}
+      if (r.ok) return j;
+      last = { status:r.status, msg:j.error?.message || '' };
+      const busy = r.status === 503 || r.status === 500 || /high demand|overloaded/i.test(last.msg);
+      const limited = r.status === 429;
+      if (!busy && !limited) throw new Error(jaError(last.status, last.msg));
+      if (limited) break;                 // 回数制限は同じモデルで待っても直らないので次のモデルへ
+      await sleep(4000 * (attempt + 1));
+    }
+  }
+  throw new Error(jaError(last.status, last.msg));
+}
+
 async function pasteConvert(){
   const raw = $('pasteText').value;
   if (!raw.trim()) return setStatus('歌詞を貼り付けてください', true);
@@ -402,11 +433,7 @@ async function transcribe(){
       }
     }
   };
-  const r = await fetch(`${API}/models/${model}:generateContent`, {
-    method:'POST', headers:{ 'x-goog-api-key':key, 'Content-Type':'application/json' }, body:JSON.stringify(body)
-  });
-  const j = await r.json();
-  if (!r.ok) throw new Error(j.error?.message || `HTTP ${r.status}`);
+  const j = await callWithFallback(key, model, body);
   const cand = j.candidates?.[0];
   if (!cand) throw new Error('結果が空でした' + (j.promptFeedback?.blockReason ? `（${j.promptFeedback.blockReason}）` : ''));
   if (cand.finishReason === 'RECITATION') throw new Error('この曲はAI側の制限で書き起こしが止められました。別のモデルを選ぶか、ヒント欄を空にして再度お試しください。');
