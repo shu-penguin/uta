@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#ffb74d">
+<title>うたの ことば</title>
+<style>
+:root{
+  --bg:#fff8ec; --card:#ffffff; --ink:#3a2e22; --sub:#8a7a66; --accent:#ff8a3d; --accent2:#4db6ac;
+  --line:#f0e2cc; --hl:#fff1a8; --warn:#e53935; --font:24px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ --bg:#1f1b16; --card:#2a251e; --ink:#f3ead9; --sub:#b3a48e; --line:#3d352a; --hl:#5a4a12; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Hiragino Maru Gothic ProN","Hiragino Maru Gothic Pro","BIZ UDPGothic","Rounded Mplus 1c",system-ui,sans-serif;
+  padding:0 16px calc(24px + env(safe-area-inset-bottom));}
+header{display:flex;align-items:center;justify-content:space-between;padding:14px 0 8px}
+h1{font-size:22px;margin:0}
+h1 span{color:var(--accent)}
+button{font:inherit;border:none;border-radius:12px;padding:10px 14px;background:var(--line);color:var(--ink);cursor:pointer}
+button.primary{background:var(--accent);color:#fff;font-weight:bold}
+button:disabled{opacity:.5}
+.card{background:var(--card);border-radius:16px;padding:14px;margin:10px 0;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+label{display:block;font-size:13px;color:var(--sub);margin:8px 0 4px}
+input[type=text],input[type=password],input[type=url],select,textarea{
+  width:100%;font:inherit;font-size:16px;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.tabs{display:flex;gap:6px;margin-bottom:6px}
+.tabs button{flex:1}
+.tabs button.on{background:var(--accent2);color:#fff}
+.opts{display:grid;grid-template-columns:1fr;gap:6px;margin-top:8px;font-size:15px}
+.opts label{display:flex;gap:8px;align-items:center;color:var(--ink);margin:0;font-size:15px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.hidden{display:none!important}
+#status{font-size:14px;color:var(--sub);margin-top:8px;white-space:pre-wrap}
+#status.err{color:var(--warn)}
+#player{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden}
+#player iframe,#player video{position:absolute;inset:0;width:100%;height:100%}
+#playerWrap.sticky{position:sticky;top:0;z-index:5;background:var(--bg);padding:6px 0}
+#songTitle{font-size:calc(var(--font) * .9);font-weight:bold;margin:6px 0 10px;text-align:center}
+#lyrics{list-style:none;margin:0;padding:0}
+#lyrics li{font-size:var(--font);line-height:1.7;padding:6px 10px;border-radius:10px;letter-spacing:.06em;word-break:keep-all;overflow-wrap:anywhere}
+#lyrics li.now{background:var(--hl)}
+#lyrics li .ts{font-size:12px;color:var(--sub);margin-right:8px;letter-spacing:0;vertical-align:middle;font-family:system-ui}
+#lyrics li .kanji{color:var(--warn);text-decoration:underline wavy}
+#lyrics li.speech{color:var(--sub)}
+#lyrics.editing li{outline:1px dashed var(--accent);margin:4px 0}
+.toolbar{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.toolbar button{padding:8px 10px;font-size:14px}
+#hist li{list-style:none;display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);gap:8px}
+#hist ul{padding:0;margin:0}
+#hist .t{flex:1;cursor:pointer}
+#hist small{color:var(--sub);display:block}
+details summary{cursor:pointer;font-weight:bold}
+.note{font-size:12px;color:var(--sub);margin-top:6px;line-height:1.5}
+@media print{
+  body{background:#fff;color:#000;padding:0}
+  header,.card:not(#resultCard),.toolbar,#playerWrap,.ts{display:none!important}
+  #resultCard{box-shadow:none;padding:0}
+  #lyrics li{background:none!important;font-size:28px;page-break-inside:avoid}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>うたの <span>ことば</span></h1>
+  <button id="btnSettings" aria-label="せってい">⚙︎</button>
+</header>
+
+<section class="card hidden" id="settingsCard">
+  <label for="apiKey">Gemini APIキー（この端末にだけ保存）</label>
+  <input id="apiKey" type="password" autocomplete="off" placeholder="AIza...">
+  <div class="row" style="margin-top:8px">
+    <button id="btnLoadModels">モデル一覧を読み込む</button>
+  </div>
+  <label for="model">モデル</label>
+  <select id="model"><option value="">（先にモデル一覧を読み込む）</option></select>
+  <p class="note">APIキーは Google AI Studio で発行できます。キーはブラウザの保存領域にだけ置かれ、Google 以外には送られません。</p>
+</section>
+
+<section class="card" id="inputCard">
+  <div class="tabs">
+    <button id="tabYt" class="on">YouTube</button>
+    <button id="tabFile">ファイル</button>
+    <button id="tabPaste">はりつけ</button>
+  </div>
+  <div id="paneYt">
+    <label for="ytUrl">YouTube のURL（公開動画）</label>
+    <input id="ytUrl" type="url" placeholder="https://www.youtube.com/watch?v=...">
+  </div>
+  <div id="panePaste" class="hidden">
+    <label for="pasteText">歌詞サイトなどからコピーした歌詞を貼り付け（漢字→ひらがなに変換。APIは使いません）</label>
+    <textarea id="pasteText" rows="8" placeholder="ここに かしを はりつけ"></textarea>
+    <label for="pasteTitle">曲名（任意）</label>
+    <input id="pasteTitle" type="text">
+    <label for="pasteYt">いっしょに流す YouTube のURL（任意）</label>
+    <input id="pasteYt" type="url" placeholder="https://www.youtube.com/watch?v=...">
+  </div>
+  <div id="paneFile" class="hidden">
+    <label for="file">動画または音声ファイル（画面収録なども可）</label>
+    <input id="file" type="file" accept="video/*,audio/*">
+  </div>
+
+  <details style="margin-top:10px">
+    <summary>かきかたの せってい</summary>
+    <div class="opts">
+      <label><input type="checkbox" id="optKata" checked> カタカナも ひらがなにする</label>
+      <label><input type="checkbox" id="optSpace" checked> ことばの きれめに スペース（わかちがき）</label>
+      <label><input type="checkbox" id="optSpeech"> うた いがいの せりふも いれる</label>
+      <label><input type="checkbox" id="optTs" checked> 時間を表示する</label>
+    </div>
+    <label for="hint" class="apiOnly">ヒント（任意：曲名・歌手・番組名など。文脈の手がかりになります）</label>
+    <input id="hint" class="apiOnly" type="text" placeholder="例：〇〇のオープニング">
+  </details>
+
+  <div class="row" style="margin-top:12px">
+    <button class="primary" id="btnGo" style="flex:1">かきおこす</button>
+  </div>
+  <div id="status"></div>
+</section>
+
+<section class="card hidden" id="resultCard">
+  <div id="playerWrap" class="sticky"><div id="player"></div></div>
+  <div id="songTitle"></div>
+  <div class="toolbar">
+    <button id="btnSmaller">あ−</button>
+    <button id="btnBigger">あ＋</button>
+    <button id="btnEdit">なおす</button>
+    <button id="btnCopy">コピー</button>
+    <button id="btnPrint">いんさつ</button>
+  </div>
+  <ol id="lyrics"></ol>
+  <p class="note">行をタップすると、その場面から再生します（時間つきの時）。読み方がちがう所は「なおす」で直せます。</p>
+  <p class="note" id="kanjiNote"></p>
+</section>
+
+<section class="card" id="hist">
+  <details>
+    <summary>まえに かきおこした うた</summary>
+    <ul id="histList"></ul>
+  </details>
+</section>
+
+<script>
+(() => {
+const API = 'https://generativelanguage.googleapis.com/v1beta';
+const UPLOAD = 'https://generativelanguage.googleapis.com/upload/v1beta/files';
+const INLINE_LIMIT = 18 * 1024 * 1024;
+const $ = id => document.getElementById(id);
+
+// ---------- storage ----------
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); }catch{ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} }
+};
+
+let current = null;   // {id,title,src:{type,url|name},lines:[{t,text,speech}],opts,date}
+let mode = 'yt';
+let fontSize = store.get('fontSize', 24);
+let ytPlayer = null, videoEl = null, objUrl = null, tickTimer = null;
+
+// ---------- settings ----------
+$('apiKey').value = store.get('apiKey', '');
+$('apiKey').addEventListener('change', e => store.set('apiKey', e.target.value.trim()));
+$('btnSettings').onclick = () => $('settingsCard').classList.toggle('hidden');
+['optKata','optSpace','optSpeech','optTs'].forEach(id => {
+  const saved = store.get(id, null);
+  if (saved !== null) $(id).checked = saved;
+  $(id).addEventListener('change', e => { store.set(id, e.target.checked); if (id==='optTs' && current) render(); });
+});
+function restoreModelList(){
+  const list = store.get('models', []), sel = store.get('model', '');
+  if (!list.length) return;
+  $('model').innerHTML = list.map(m => `<option value="${m.id}">${m.label}</option>`).join('');
+  if (sel && list.some(m => m.id === sel)) $('model').value = sel;
+}
+restoreModelList();
+$('model').addEventListener('change', e => store.set('model', e.target.value));
+
+$('btnLoadModels').onclick = async () => {
+  const key = $('apiKey').value.trim();
+  if (!key) return setStatus('APIキーを入れてください', true);
+  store.set('apiKey', key);
+  setStatus('モデル一覧を読み込み中…');
+  try{
+    const r = await fetch(`${API}/models?pageSize=200`, { headers:{'x-goog-api-key':key} });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error?.message || r.status);
+    const list = (j.models || [])
+      .filter(m => (m.supportedGenerationMethods||[]).includes('generateContent'))
+      .filter(m => /gemini/.test(m.name) && /(flash|pro)/.test(m.name) && !/(image|tts|audio|live|embedding|lite)/.test(m.name))
+      .map(m => ({ id: m.name.replace('models/',''), label: `${m.displayName || m.name} (${m.name.replace('models/','')})` }))
+      .sort((a,b) => {
+        const va = parseFloat((a.id.match(/gemini-(\d+(\.\d+)?)/)||[])[1]||0), vb = parseFloat((b.id.match(/gemini-(\d+(\.\d+)?)/)||[])[1]||0);
+        if (vb !== va) return vb - va;
+        const fa = /flash/.test(a.id) ? 0 : 1, fb = /flash/.test(b.id) ? 0 : 1;
+        return fa - fb || a.id.localeCompare(b.id);
+      });
+    if (!list.length) throw new Error('使えるモデルが見つかりませんでした');
+    store.set('models', list);
+    restoreModelList();
+    if (!store.get('model','')) { $('model').value = list[0].id; store.set('model', list[0].id); }
+    setStatus(`${list.length}件のモデルを読み込みました`);
+  }catch(e){ setStatus('読み込み失敗: ' + e.message, true); }
+};
+
+// ---------- tabs ----------
+$('tabYt').onclick = () => setMode('yt');
+$('tabFile').onclick = () => setMode('file');
+$('tabPaste').onclick = () => setMode('paste');
+function setMode(m){
+  mode = m;
+  [['yt','Yt'],['file','File'],['paste','Paste']].forEach(([k,n]) => {
+    $('tab'+n).classList.toggle('on', m===k); $('pane'+n).classList.toggle('hidden', m!==k);
+  });
+  document.querySelectorAll('.apiOnly').forEach(el => el.classList.toggle('hidden', m==='paste'));
+  $('btnGo').textContent = m==='paste' ? 'ひらがなに する' : 'かきおこす';
+}
+
+function setStatus(msg, err){ $('status').textContent = msg; $('status').classList.toggle('err', !!err); }
+
+// ---------- helpers ----------
+function ytId(url){
+  try{
+    const u = new URL(url.trim());
+    if (u.hostname.includes('youtu.be')) return u.pathname.slice(1).split('/')[0];
+    if (u.searchParams.get('v')) return u.searchParams.get('v');
+    const m = u.pathname.match(/\/(shorts|embed|live)\/([\w-]{6,})/);
+    return m ? m[2] : null;
+  }catch{ return null; }
+}
+const kataToHira = s => s.replace(/[\u30A1-\u30F6]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
+const hasKanji = s => /[\u4E00-\u9FFF\u3400-\u4DBF々〆]/.test(s);
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = t => { t = Math.max(0, Math.floor(t||0)); return `${Math.floor(t/60)}:${String(t%60).padStart(2,'0')}`; };
+function fileToB64(file){
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(String(fr.result).split(',')[1]);
+    fr.onerror = rej; fr.readAsDataURL(file);
+  });
+}
+
+// ---------- kanji -> hiragana (kuromoji, runs in browser) ----------
+const KUROMOJI_JS = 'https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js';
+const KUROMOJI_DICT = 'https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/';
+const KANJI_RE = /[\u4E00-\u9FFF\u3400-\u4DBF々〆ヶ]/;
+// よくある読みまちがいの補正
+const READING_FIX = { '一人':'ひとり','二人':'ふたり','一日':'いちにち','二日':'ふつか','明日':'あした','昨日':'きのう','今日':'きょう',
+  '大人':'おとな','上手':'じょうず','下手':'へた','私':'わたし','一緒':'いっしょ','何':'なに','方':'ほう','七夕':'たなばた','真っ赤':'まっか','真っ青':'まっさお' };
+let tokenizerP = null;
+function getTokenizer(){
+  if (tokenizerP) return tokenizerP;
+  tokenizerP = new Promise((res, rej) => {
+    const go = () => kuromoji.builder({ dicPath: KUROMOJI_DICT }).build((err, tk) => err ? rej(err) : res(tk));
+    if (window.kuromoji) return go();
+    const sc = document.createElement('script'); sc.src = KUROMOJI_JS;
+    sc.onload = go; sc.onerror = () => rej(new Error('変換辞書を読み込めませんでした（ネット接続を確認）'));
+    document.head.appendChild(sc);
+  }).catch(e => { tokenizerP = null; throw e; });
+  return tokenizerP;
+}
+function toHiraLine(tk, line, o){
+  for (const [k, v] of Object.entries(READING_FIX)) if (k.length > 1) line = line.split(k).join(v);
+  const toks = tk.tokenize(line);
+  let out = '', prev = null;
+  for (const t of toks){
+    const s = t.surface_form, p = t.pos, d1 = t.pos_detail_1;
+    if (/^\s+$/.test(s)){ out += ' '; prev = null; continue; }
+    if (p === '記号' && s !== 'ー' && /^[、。，．,.!！?？「」『』（）()・…〜~―♪☆★]+$/.test(s)){
+      if (/[!！?？]/.test(s)) out += s.replace(/!/g,'！').replace(/\?/g,'？');
+      out += ' '; prev = null; continue;
+    }
+    let r = s;
+    if (KANJI_RE.test(s)) r = READING_FIX[s] || ((t.reading && t.reading !== '*') ? kataToHira(t.reading) : s);
+    if (o.kata) r = kataToHira(r);
+    const independent = ['名詞','動詞','形容詞','副詞','連体詞','接続詞','感動詞','接頭詞'].includes(p) && d1 !== '非自立' && d1 !== '接尾';
+    const joinNoun = p === '名詞' && prev && prev.pos === '名詞'
+      && ['一般','固有名詞','サ変接続','数'].includes(prev.pos_detail_1) && ['一般','固有名詞','サ変接続','数'].includes(d1);
+    const afterPrefix = prev && prev.pos === '接頭詞';
+    if (o.space && prev && independent && !joinNoun && !afterPrefix) out += ' ';
+    out += r; prev = t;
+  }
+  return out.replace(/\s+/g, ' ').trim();
+}
+
+// ---------- prompt ----------
+function buildPrompt(o){
+  return `この動画（または音声）で歌われている歌を聞き取り、6歳の子どもが読めるように書き起こしてください。
+
+【聞き取りの方針】
+- 歌声（ボーカル）の音声を第一の手がかりにする。
+- 画面に歌詞テロップ・字幕・その他の文字が出ていれば、それを聞き取りの確認と補正に使う。音声とテロップが食い違うときは、実際に歌っている音を優先する。
+- 曲全体の文脈（テーマ、くり返し、韻、前後のつながり）から、不自然な聞き間違いを直す。
+- くり返し部分も省略せず、歌われたとおりに毎回書く。
+- 聞き取れない部分は「？？」とし、推測で埋めない。
+${o.hint ? `- ヒント（利用者より）：${o.hint}\n` : ''}${o.speech ? '- 歌以外のせりふ・語りも含め、それらの行は speech を true にする。' : '- 歌以外のせりふ・語り・効果音は含めない。'}
+
+【表記のルール】
+- 漢字は一切使わず、ひらがなで書く。読みは歌っている発音に合わせる。
+- ${o.kata ? 'カタカナ語もひらがなで書く。英語の歌詞は、歌っている発音をひらがなで書く。' : 'カタカナ語はカタカナのまま。英語の歌詞は、歌っている発音をカタカナで書く。'}
+- 助詞の「は」「へ」「を」は、発音が「わ」「え」「お」でも正しい表記（は・へ・を）で書く。
+- ${o.space ? '文節の区切りに半角スペースを入れる（例：「きょうは いい てんき」）。' : '区切りのスペースは入れない。'}
+- 句読点は使わない。
+- 1行＝歌の1フレーズ（ひと息）。長すぎる行は分ける。
+
+【出力】
+次の形式のJSONだけを返す：
+{"title":"曲名（わかれば。ひらがな表記、不明なら空文字）","lines":[{"t":歌い出しの秒数(数値),"text":"ひらがなの歌詞","speech":false}]}`;
+}
+
+// ---------- Gemini calls ----------
+async function uploadFile(key, file){
+  const start = await fetch(UPLOAD, {
+    method:'POST',
+    headers:{
+      'x-goog-api-key':key,
+      'X-Goog-Upload-Protocol':'resumable','X-Goog-Upload-Command':'start',
+      'X-Goog-Upload-Header-Content-Length':String(file.size),
+      'X-Goog-Upload-Header-Content-Type':file.type || 'video/mp4',
+      'Content-Type':'application/json'
+    },
+    body: JSON.stringify({ file:{ display_name:file.name } })
+  });
+  const upUrl = start.headers.get('x-goog-upload-url');
+  if (!start.ok || !upUrl) throw new Error('ファイルのアップロードを開始できませんでした。18MB以下に短くして試してください。');
+  const up = await fetch(upUrl, { method:'POST', headers:{'X-Goog-Upload-Offset':'0','X-Goog-Upload-Command':'upload, finalize'}, body:file });
+  const info = await up.json();
+  if (!up.ok) throw new Error(info.error?.message || 'アップロード失敗');
+  let f = info.file;
+  for (let i = 0; i < 120 && f.state === 'PROCESSING'; i++){
+    setStatus(`どうがを じゅんび中…（${i*3}びょう）`);
+    await new Promise(r => setTimeout(r, 3000));
+    const r = await fetch(`${API}/${f.name}`, { headers:{'x-goog-api-key':key} });
+    f = await r.json();
+  }
+  if (f.state !== 'ACTIVE') throw new Error('動画の処理に失敗しました（' + (f.state||'不明') + '）');
+  return { file_data:{ mime_type:f.mimeType, file_uri:f.uri } };
+}
+
+async function pasteConvert(){
+  const raw = $('pasteText').value;
+  if (!raw.trim()) return setStatus('歌詞を貼り付けてください', true);
+  const o = { kata:$('optKata').checked, space:$('optSpace').checked, speech:false, hint:'' };
+  setStatus('へんかん じしょを よみこみ中…（はじめてだけ少し時間がかかります）');
+  const tk = await getTokenizer();
+  const lines = raw.replace(/\r/g,'').split('\n').map(l => l.trim()).filter(Boolean)
+    .map(l => ({ t:null, text: toHiraLine(tk, l, o), speech:false })).filter(l => l.text);
+  if (!lines.length) throw new Error('へんかんできる もじが ありませんでした');
+  const id = ytId($('pasteYt').value || '');
+  const src = id ? { type:'yt', id, url:$('pasteYt').value.trim() } : { type:'paste' };
+  const tt = $('pasteTitle').value.trim();
+  const title = tt ? (KANJI_RE.test(tt) ? toHiraLine(tk, tt, { ...o, space:false }) : tt) : 'なまえ なし';
+  current = { id:Date.now().toString(36), title, src, lines, opts:o, date:new Date().toISOString() };
+  saveHistory(); showResult(); setStatus('できました！');
+}
+
+async function transcribe(){
+  if (mode === 'paste') return pasteConvert();
+  const key = $('apiKey').value.trim();
+  const model = $('model').value;
+  if (!key || !model){ $('settingsCard').classList.remove('hidden'); return setStatus('⚙︎ で APIキーを入れて、モデル一覧を読み込んでください', true); }
+
+  const o = { kata:$('optKata').checked, space:$('optSpace').checked, speech:$('optSpeech').checked, hint:$('hint').value.trim() };
+  let mediaPart, src;
+  if (mode === 'yt'){
+    const url = $('ytUrl').value.trim(), id = ytId(url);
+    if (!id) return setStatus('YouTube のURLを確認してください', true);
+    mediaPart = { file_data:{ file_uri:`https://www.youtube.com/watch?v=${id}` } };
+    src = { type:'yt', id, url };
+  } else {
+    const file = $('file').files[0];
+    if (!file) return setStatus('ファイルを選んでください', true);
+    src = { type:'file', name:file.name };
+    if (file.size <= INLINE_LIMIT){
+      setStatus('ファイルを よみこみ中…');
+      mediaPart = { inline_data:{ mime_type:file.type || 'video/mp4', data: await fileToB64(file) } };
+    } else {
+      setStatus('ファイルを アップロード中…');
+      mediaPart = await uploadFile(key, file);
+    }
+    if (objUrl) URL.revokeObjectURL(objUrl);
+    objUrl = URL.createObjectURL(file);
+  }
+
+  setStatus('きいて かきおこし中…（1〜3ぷん かかることがあります）');
+  const body = {
+    contents:[{ role:'user', parts:[ mediaPart, { text: buildPrompt(o) } ] }],
+    generationConfig:{
+      temperature:0.2,
+      responseMimeType:'application/json',
+      responseSchema:{
+        type:'OBJECT',
+        properties:{
+          title:{ type:'STRING' },
+          lines:{ type:'ARRAY', items:{ type:'OBJECT', properties:{ t:{type:'NUMBER'}, text:{type:'STRING'}, speech:{type:'BOOLEAN'} }, required:['t','text'] } }
+        },
+        required:['lines']
+      }
+    }
+  };
+  const r = await fetch(`${API}/models/${model}:generateContent`, {
+    method:'POST', headers:{ 'x-goog-api-key':key, 'Content-Type':'application/json' }, body:JSON.stringify(body)
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error?.message || `HTTP ${r.status}`);
+  const cand = j.candidates?.[0];
+  if (!cand) throw new Error('結果が空でした' + (j.promptFeedback?.blockReason ? `（${j.promptFeedback.blockReason}）` : ''));
+  if (cand.finishReason === 'RECITATION') throw new Error('この曲はAI側の制限で書き起こしが止められました。別のモデルを選ぶか、ヒント欄を空にして再度お試しください。');
+  const text = (cand.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('');
+  let data;
+  try{ data = JSON.parse(text); }
+  catch{ const m = text.match(/\{[\s\S]*\}/); if (!m) throw new Error('結果を読み取れませんでした'); data = JSON.parse(m[0]); }
+
+  let lines = (data.lines || []).filter(l => l && l.text && l.text.trim())
+    .map(l => ({ t:Number(l.t)||0, text:String(l.text).trim(), speech:!!l.speech }));
+  if (o.kata) lines.forEach(l => l.text = kataToHira(l.text));
+  lines.sort((a,b) => a.t - b.t);
+  if (lines.some(l => KANJI_RE.test(l.text))){
+    try{
+      setStatus('のこった かんじを ひらがなに しています…');
+      const tk = await getTokenizer();
+      lines.forEach(l => { if (KANJI_RE.test(l.text)) l.text = toHiraLine(tk, l.text, { kata:o.kata, space:false }); });
+    }catch{}
+  }
+  if (!lines.length) throw new Error('うたが みつかりませんでした');
+
+  const title = (data.title || '').trim() || (src.type==='file' ? src.name : 'なまえ なし');
+  current = { id:Date.now().toString(36), title, src, lines, opts:o, date:new Date().toISOString() };
+  saveHistory();
+  showResult();
+  setStatus('できました！');
+}
+
+$('btnGo').onclick = async () => {
+  $('btnGo').disabled = true;
+  try{ await transcribe(); }
+  catch(e){ setStatus('しっぱい: ' + e.message, true); }
+  finally{ $('btnGo').disabled = false; }
+};
+
+// ---------- result ----------
+function render(){
+  const showTs = $('optTs').checked;
+  $('songTitle').textContent = current.title;
+  let kanjiCount = 0;
+  $('lyrics').innerHTML = current.lines.map((l, i) => {
+    let body = esc(l.text).replace(/([\u4E00-\u9FFF\u3400-\u4DBF々〆]+)/g, m => { kanjiCount++; return `<span class="kanji">${m}</span>`; });
+    return `<li data-i="${i}" class="${l.speech ? 'speech' : ''}">${showTs && l.t != null ? `<span class="ts">${fmt(l.t)}</span>` : ''}<span class="tx">${l.speech ? '（せりふ）' : ''}${body}</span></li>`;
+  }).join('');
+  $('kanjiNote').textContent = kanjiCount ? `赤い下線の部分に漢字が残っています。「なおす」で直せます。` : '';
+  document.documentElement.style.setProperty('--font', fontSize + 'px');
+}
+
+function showResult(){
+  $('resultCard').classList.remove('hidden');
+  render();
+  setupPlayer();
+  $('resultCard').scrollIntoView({ behavior:'smooth' });
+}
+
+function setupPlayer(){
+  clearInterval(tickTimer);
+  ytPlayer = null; videoEl = null;
+  const box = $('player');
+  box.innerHTML = '';
+  const s = current.src;
+  if (s.type === 'yt'){
+    $('playerWrap').classList.remove('hidden');
+    const div = document.createElement('div'); div.id = 'ytFrame'; box.appendChild(div);
+    loadYtApi().then(() => {
+      ytPlayer = new YT.Player('ytFrame', { videoId:s.id, playerVars:{ playsinline:1, rel:0 } });
+    });
+  } else if (objUrl && s.name === ($('file').files[0]||{}).name){
+    $('playerWrap').classList.remove('hidden');
+    videoEl = document.createElement('video');
+    videoEl.src = objUrl; videoEl.controls = true; videoEl.playsInline = true;
+    box.appendChild(videoEl);
+  } else {
+    $('playerWrap').classList.add('hidden');
+  }
+  tickTimer = setInterval(tick, 300);
+}
+
+let ytReady = null;
+function loadYtApi(){
+  if (window.YT && YT.Player) return Promise.resolve();
+  if (ytReady) return ytReady;
+  ytReady = new Promise(res => {
+    window.onYouTubeIframeAPIReady = res;
+    const sc = document.createElement('script'); sc.src = 'https://www.youtube.com/iframe_api';
+    document.head.appendChild(sc);
+  });
+  return ytReady;
+}
+
+function nowTime(){
+  if (ytPlayer && ytPlayer.getCurrentTime) return ytPlayer.getCurrentTime();
+  if (videoEl) return videoEl.currentTime;
+  return null;
+}
+let lastIdx = -1;
+function tick(){
+  const t = nowTime();
+  if (t == null || !current || current.lines[0]?.t == null || $('lyrics').classList.contains('editing')) return;
+  let idx = -1;
+  for (let i = 0; i < current.lines.length; i++){ if (current.lines[i].t <= t + 0.2) idx = i; else break; }
+  if (idx === lastIdx) return;
+  lastIdx = idx;
+  document.querySelectorAll('#lyrics li').forEach(li => li.classList.toggle('now', +li.dataset.i === idx));
+  const el = document.querySelector(`#lyrics li[data-i="${idx}"]`);
+  const playing = ytPlayer ? (ytPlayer.getPlayerState && ytPlayer.getPlayerState() === 1) : (videoEl && !videoEl.paused);
+  if (el && playing) el.scrollIntoView({ block:'center', behavior:'smooth' });
+}
+
+$('lyrics').addEventListener('click', e => {
+  if ($('lyrics').classList.contains('editing')) return;
+  const li = e.target.closest('li'); if (!li) return;
+  const t = current.lines[+li.dataset.i].t;
+  if (t == null) return;
+  if (ytPlayer && ytPlayer.seekTo){ ytPlayer.seekTo(t, true); ytPlayer.playVideo(); }
+  else if (videoEl){ videoEl.currentTime = t; videoEl.play(); }
+});
+
+// ---------- toolbar ----------
+$('btnBigger').onclick = () => { fontSize = Math.min(56, fontSize + 4); store.set('fontSize', fontSize); render(); };
+$('btnSmaller').onclick = () => { fontSize = Math.max(14, fontSize - 4); store.set('fontSize', fontSize); render(); };
+$('btnEdit').onclick = () => {
+  const ol = $('lyrics');
+  if (!ol.classList.contains('editing')){
+    ol.classList.add('editing');
+    ol.querySelectorAll('.tx').forEach(el => { el.contentEditable = 'true'; el.textContent = el.textContent; });
+    $('btnEdit').textContent = 'ほぞん';
+  } else {
+    ol.querySelectorAll('li').forEach(li => {
+      const i = +li.dataset.i;
+      current.lines[i].text = li.querySelector('.tx').textContent.replace(/^（せりふ）/, '').trim();
+    });
+    current.lines = current.lines.filter(l => l.text);
+    ol.classList.remove('editing');
+    $('btnEdit').textContent = 'なおす';
+    saveHistory(); render(); lastIdx = -1;
+  }
+};
+$('btnCopy').onclick = async () => {
+  const txt = current.title + '\n\n' + current.lines.map(l => (l.speech ? '（せりふ）' : '') + l.text).join('\n');
+  try{ await navigator.clipboard.writeText(txt); setStatus('コピーしました'); }
+  catch{ setStatus('コピーできませんでした', true); }
+};
+$('btnPrint').onclick = () => window.print();
+
+// ---------- history ----------
+function saveHistory(){
+  const h = store.get('history', []).filter(x => x.id !== current.id);
+  h.unshift(current);
+  store.set('history', h.slice(0, 50));
+  renderHistory();
+}
+function renderHistory(){
+  const h = store.get('history', []);
+  $('histList').innerHTML = h.length ? h.map(x => `
+    <li><div class="t" data-id="${x.id}">${esc(x.title)}<small>${new Date(x.date).toLocaleDateString('ja-JP')} ・ ${x.src.type==='yt' ? 'YouTube' : x.src.type==='paste' ? 'はりつけ' : esc(x.src.name||'ファイル')}</small></div>
+    <button data-del="${x.id}">けす</button></li>`).join('') : '<li><small>まだ ありません</small></li>';
+}
+$('histList').addEventListener('click', e => {
+  const del = e.target.closest('[data-del]');
+  if (del){
+    if (!confirm('けしますか？')) return;
+    store.set('history', store.get('history', []).filter(x => x.id !== del.dataset.del));
+    return renderHistory();
+  }
+  const t = e.target.closest('.t'); if (!t) return;
+  const item = store.get('history', []).find(x => x.id === t.dataset.id);
+  if (item){ current = item; lastIdx = -1; showResult(); }
+});
+renderHistory();
+})();
+</script>
+</body>
+</html>
