@@ -107,7 +107,7 @@ details summary{cursor:pointer;font-weight:bold}
   <details style="margin-top:10px">
     <summary>かきかたの せってい</summary>
     <div class="opts">
-      <label><input type="checkbox" id="optKata" checked> カタカナも ひらがなにする</label>
+      <label><input type="checkbox" id="optKata"> カタカナも ぜんぶ ひらがなにする</label>
       <label><input type="checkbox" id="optSpace" checked> ことばの きれめに スペース（わかちがき）</label>
       <label><input type="checkbox" id="optSpeech"> うた いがいの せりふも いれる</label>
       <label><input type="checkbox" id="optTs" checked> 時間を表示する</label>
@@ -167,9 +167,9 @@ $('apiKey').value = store.get('apiKey', '');
 $('apiKey').addEventListener('change', e => store.set('apiKey', e.target.value.trim()));
 $('btnSettings').onclick = () => $('settingsCard').classList.toggle('hidden');
 ['optKata','optSpace','optSpeech','optTs'].forEach(id => {
-  const saved = store.get(id, null);
+  const saved = store.get(id === 'optKata' ? 'optKata2' : id, null);
   if (saved !== null) $(id).checked = saved;
-  $(id).addEventListener('change', e => { store.set(id, e.target.checked); if (id==='optTs' && current) render(); });
+  $(id).addEventListener('change', e => { store.set(id === 'optKata' ? 'optKata2' : id, e.target.checked); if (id==='optTs' && current) render(); });
 });
 function restoreModelList(){
   const list = store.get('models', []), sel = store.get('model', '');
@@ -301,7 +301,7 @@ ${o.hint ? `- ヒント（利用者より）：${o.hint}\n` : ''}${o.speech ? '-
 
 【表記のルール】
 - 漢字は一切使わず、ひらがなで書く。読みは歌っている発音に合わせる。
-- ${o.kata ? 'カタカナ語もひらがなで書く。英語の歌詞は、歌っている発音をひらがなで書く。' : 'カタカナ語はカタカナのまま。英語の歌詞は、歌っている発音をカタカナで書く。'}
+- ${o.kata ? 'カタカナ語もひらがなで書く。英語の歌詞は、歌っている発音をひらがなで書く。' : 'ふつうカタカナで書く言葉（外来語、動物の鳴き声や音の言葉、キャラクター名など）はカタカナで書く。英語の歌詞は、歌っている発音をカタカナで書く。それ以外はひらがな。'}
 - 助詞の「は」「へ」「を」は、発音が「わ」「え」「お」でも正しい表記（は・へ・を）で書く。
 - ${o.space ? '文節の区切りに半角スペースを入れる（例：「きょうは いい てんき」）。' : '区切りのスペースは入れない。'}
 - 句読点は使わない。
